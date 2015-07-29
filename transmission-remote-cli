@@ -730,6 +730,11 @@ class Transmission(object):
         request.send_request()
         self.wait_for_torrentlist_update()
 
+    def remove_torrents(self, ids, delete_local_data=False):
+        request = TransmissionRequest(self.host, self.port, self.path, 'torrent-remove', 1, {'ids': ids, 'delete-local-data':delete_local_data})
+        request.send_request()
+        self.wait_for_torrentlist_update()
+
     def rename_torrent_file(self, id, path, newname):
         request = TransmissionRequest(self.host, self.port, self.path, 'torrent-rename-path', 1,
                                       {'ids': [id], 'path': path, 'name': newname})
@@ -959,6 +964,8 @@ class Interface(object):
             curses.KEY_DC:          self.r_key,
             ord('R'):               self.remove_torrent_local_data,
             curses.KEY_SDC:         self.remove_torrent_local_data,
+            ord('x'):               self.x_key,
+            ord('X'):               self.X_key,
             curses.KEY_UP:          self.movement_keys,
             ord('k'):               self.movement_keys,
             curses.KEY_DOWN:        self.movement_keys,
@@ -1249,6 +1256,14 @@ class Interface(object):
         else:
             self.move_queue('up')
 
+    def x_key(self, c):
+        if self.selected_torrent == -1:
+            self.remove_finished_torrents(delete_local_data=False)
+
+    def X_key(self, c):
+        if self.selected_torrent == -1:
+            self.remove_finished_torrents(delete_local_data=True)
+
     def right_key(self, c):
         if self.focus > -1 and self.selected_torrent == -1:
             self.enter_key(c)
@@ -1493,6 +1508,19 @@ class Interface(object):
                     self.details_category_focus = 0
                 server.remove_torrent_local_data(self.torrents[self.focus]['id'])
                 self.focus_next_after_delete()
+
+    def remove_finished_torrents(self, delete_local_data = False):
+        candidates = [torrent for torrent in self.torrents
+                if torrent['status'] == Transmission.STATUS_STOPPED
+                and torrent['uploadRatio'] >= torrent['seedRatioLimit']]
+
+        names = [torrent['name'][0:self.width - 15] for torrent in candidates]
+        ids = [torrent['id'] for torrent in candidates]
+
+        if len(candidates) > 0 and self.dialog_yesno("Remove following torrents?\n%s" % '\n'.join(names), important=delete_local_data) == True:
+            server.remove_torrents(ids, delete_local_data=delete_local_data)
+            if self.focused_id in ids:
+                self.focused_id = -1
 
     def focus_next_after_delete(self):
         """ Focus next torrent after user deletes torrent """
@@ -2837,7 +2865,9 @@ class Interface(object):
             message += "            J/K  Jump to next/previous directory\n"
         # Torrent list
         if self.selected_torrent == -1:
-            message += "              /  Search in torrent list\n" + \
+            message += "              x  Remove all finished torrents and keep content\n" + \
+                       "              X  Remove all finished torrents and delete content\n" + \
+                       "              /  Search in torrent list\n" + \
                        "              f  Filter torrent list\n" + \
                        "              s  Sort torrent list\n" \
                        "    Enter/Right  View torrent's details\n" + \
